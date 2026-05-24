@@ -67,8 +67,12 @@ async function start() {
     await db.connect();
     logger.info('✅ PostgreSQL connected');
 
-    await redis.connect();
-    logger.info('✅ Redis connected');
+    try {
+      await redis.connect();
+      logger.info('✅ Redis connected');
+    } catch(redisErr) {
+      logger.warn('⚠️  Redis unavailable — app will run without caching');
+    }
 
     await db.runMigrations();
 
@@ -97,3 +101,4 @@ process.on('SIGTERM', async () => { await db.disconnect(); await redis.disconnec
 
 start();
 module.exports = app;
+
