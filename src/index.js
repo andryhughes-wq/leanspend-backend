@@ -76,7 +76,29 @@ async function start() {
 
     await db.runMigrations();
 
-    cron.schedule('0 * * * *',  () => logger.info('🔄 Hourly deal refresh running...'));
+    // Initial Kroger sync on startup
+    const krogerService = require('./services/krogerService');
+    setTimeout(async () => {
+      try {
+        logger.info('🛒 Syncing live Kroger deals on startup...');
+        await krogerService.syncDealsToDb(db);
+      } catch(err) { logger.warn('Startup Kroger sync failed (non-fatal):', err.message); }
+    }, 5000);
+
+    // Kroger deal sync — every Wednesday at 6am (when Kroger resets weekly ads)
+    cron.schedule('0 6 * * 3', async () => {
+      logger.info('🛒 Wednesday Kroger weekly ad refresh starting...');
+      try { await krogerService.syncDealsToDb(db); }
+      catch(err) { logger.error('Kroger cron sync failed:', err.message); }
+    });
+
+    // Also refresh every 6 hours
+    cron.schedule('0 */6 * * *', async () => {
+      logger.info('🔄 6-hour Kroger deal refresh...');
+      try { await krogerService.syncDealsToDb(db); }
+      catch(err) { logger.warn('6-hour sync failed:', err.message); }
+    });
+
     cron.schedule('*/15 * * * *', async () => {
       try {
         await db.query(`UPDATE deals SET valid_to=CURRENT_DATE-1 WHERE valid_to<CURRENT_DATE AND valid_to>=CURRENT_DATE-INTERVAL '7 days'`);

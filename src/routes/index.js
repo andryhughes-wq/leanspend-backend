@@ -286,6 +286,37 @@ telegramRouter.post('/', express.json(), async (req,res) => {
 
 module.exports = { budgetRouter, mealsRouter, dealsRouter, nutritionRouter, chatRouter, themeRouter, storesRouter, telegramRouter };
 
+// ─── KROGER LIVE API ENDPOINTS ───────────────────────────────────────────────
+
+// GET /api/deals/kroger-live — fetch fresh deals directly from Kroger API
+dealsRouter.get('/kroger-live', async (req, res, next) => {
+  try {
+    let kroger;
+    try { kroger = require('../services/krogerService'); }
+    catch(_) { return res.json({ deals: [], message: 'krogerService not found' }); }
+
+    const zipCode    = req.query.zip || '77001';
+    const locationId = await kroger.findNearbyStore(zipCode);
+    const deals      = await kroger.getWeeklyDeals(locationId);
+
+    // Also save to DB in background
+    kroger.syncDealsToDb(db, locationId).catch(e => logger.warn('BG sync:', e.message));
+
+    res.json({ deals, count: deals.length, locationId, source: 'kroger_api', fetchedAt: new Date().toISOString() });
+  } catch(err) { next(err); }
+});
+
+// POST /api/deals/sync-kroger — manually trigger a Kroger sync
+dealsRouter.post('/sync-kroger', async (req, res, next) => {
+  try {
+    let kroger;
+    try { kroger = require('../services/krogerService'); }
+    catch(_) { return res.json({ message: 'krogerService not found' }); }
+    const deals = await kroger.syncDealsToDb(db);
+    res.json({ message: `Synced ${deals.length} live Kroger deals!`, count: deals.length, syncedAt: new Date().toISOString() });
+  } catch(err) { next(err); }
+});
+
 // ─── These lines are appended by patch — do not edit above ────────────────────
 // Re-open the existing routers and add new v2 endpoints
 
