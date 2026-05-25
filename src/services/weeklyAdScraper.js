@@ -313,16 +313,20 @@ async function scrapeAldiAd() {
 }
 
 // ─── Scrape ALL stores ────────────────────────────────────────────────────────
-async function scrapeAllWeeklyAds(stores = ['kroger','walmart','heb','target','aldi']) {
+async function scrapeAllWeeklyAds(stores = ['kroger','walmart','heb','target','aldi','randalls','safeway','costco','samsclub']) {
   logger.info(`Scraping weekly ads for: ${stores.join(', ')}`);
   const results = { deals: [], errors: [], scrapedAt: new Date().toISOString() };
 
   const scrapers = {
-    kroger:  scrapeKrogerAd,
-    walmart: scrapeWalmartAd,
-    heb:     scrapeHebAd,
-    target:  scrapeTargetAd,
-    aldi:    scrapeAldiAd,
+    kroger:   scrapeKrogerAd,
+    walmart:  scrapeWalmartAd,
+    heb:      scrapeHebAd,
+    target:   scrapeTargetAd,
+    aldi:     scrapeAldiAd,
+    randalls: scrapeRandallsAd,
+    safeway:  scrapeSafewayAd,
+    costco:   scrapeCostcoAd,
+    samsclub: scrapeSamsAd,
   };
 
   await Promise.allSettled(
@@ -371,6 +375,31 @@ function getFallbackDeals(store) {
       { name:'ALDI Chicken Breast 2lb',          store:'aldi', dealPrice:4.99, originalPrice:6.99, dealType:'weekly_find', description:'ALDI Finds', source:'fallback', scrapedAt: new Date().toISOString() },
       { name:'Fresh Atlantic Salmon',            store:'aldi', dealPrice:6.99, originalPrice:9.99, dealType:'weekly_find', description:'ALDI Finds', source:'fallback', scrapedAt: new Date().toISOString() },
     ],
+    randalls: [
+      { name:'Randalls Boneless Chicken Breast', store:'randalls', dealPrice:3.49, originalPrice:5.99, dealType:'weekly_special', description:'Randalls Weekly', source:'fallback', scrapedAt: new Date().toISOString() },
+      { name:'Large Eggs 18ct',                  store:'randalls', dealPrice:3.49, originalPrice:4.99, dealType:'weekly_special', description:'Randalls Weekly', source:'fallback', scrapedAt: new Date().toISOString() },
+      { name:'Fresh Salmon Fillet',              store:'randalls', dealPrice:7.99, originalPrice:11.99, dealType:'weekly_special', description:'Randalls Weekly', source:'fallback', scrapedAt: new Date().toISOString() },
+      { name:'Organic Baby Spinach 5oz',         store:'randalls', dealPrice:2.99, originalPrice:4.49, dealType:'weekly_special', description:'Randalls Weekly', source:'fallback', scrapedAt: new Date().toISOString() },
+    ],
+    safeway: [
+      { name:'Safeway Chicken Breast Value Pack', store:'safeway', dealPrice:2.99, originalPrice:4.99, dealType:'weekly_special', description:'Safeway Weekly', source:'fallback', scrapedAt: new Date().toISOString() },
+      { name:'Lucerne Large Eggs 18ct',           store:'safeway', dealPrice:3.99, originalPrice:5.49, dealType:'weekly_special', description:'Safeway Weekly', source:'fallback', scrapedAt: new Date().toISOString() },
+      { name:'O Organics Greek Yogurt 32oz',      store:'safeway', dealPrice:4.99, originalPrice:7.49, dealType:'weekly_special', description:'Safeway Weekly', source:'fallback', scrapedAt: new Date().toISOString() },
+      { name:'Fresh Broccoli Crowns',             store:'safeway', dealPrice:0.99, originalPrice:1.79, dealType:'weekly_special', description:'Safeway Weekly', source:'fallback', scrapedAt: new Date().toISOString() },
+    ],
+    costco: [
+      { name:'Kirkland Chicken Breast 6.5lb',      store:'costco', dealPrice:19.99, originalPrice:26.99, dealType:'hot_buy', description:'Costco Hot Buy', source:'fallback', scrapedAt: new Date().toISOString() },
+      { name:'Kirkland Omega-3 Salmon 3lb',        store:'costco', dealPrice:22.99, originalPrice:29.99, dealType:'hot_buy', description:'Costco Hot Buy', source:'fallback', scrapedAt: new Date().toISOString() },
+      { name:'Vital Farms Eggs 24ct',              store:'costco', dealPrice:9.99, originalPrice:13.99,  dealType:'coupon',  description:'Monthly Coupon', source:'fallback', scrapedAt: new Date().toISOString() },
+      { name:'Kirkland Greek Yogurt 3lb',          store:'costco', dealPrice:6.99, originalPrice:9.49,   dealType:'hot_buy', description:'Costco Hot Buy', source:'fallback', scrapedAt: new Date().toISOString() },
+      { name:'Organic Spinach 2.5lb',              store:'costco', dealPrice:6.49, originalPrice:8.99,   dealType:'hot_buy', description:'Costco Hot Buy', source:'fallback', scrapedAt: new Date().toISOString() },
+    ],
+    samsclub: [
+      { name:"Member's Mark Chicken Breast 4lb",   store:'samsclub', dealPrice:12.98, originalPrice:17.98, dealType:'member_savings', description:"Sam's Member Savings", source:'fallback', scrapedAt: new Date().toISOString() },
+      { name:'SE Grocers Large Eggs 60ct',         store:'samsclub', dealPrice:8.98,  originalPrice:12.98, dealType:'member_savings', description:"Sam's Member Savings", source:'fallback', scrapedAt: new Date().toISOString() },
+      { name:"Member's Mark Atlantic Salmon 3lb",  store:'samsclub', dealPrice:19.98, originalPrice:26.98, dealType:'member_savings', description:"Sam's Member Savings", source:'fallback', scrapedAt: new Date().toISOString() },
+      { name:"Member's Mark Brown Rice 50lb",      store:'samsclub', dealPrice:24.98, originalPrice:31.98, dealType:'member_savings', description:"Sam's Member Savings", source:'fallback', scrapedAt: new Date().toISOString() },
+    ],
   };
   return fallbacks[store] || [];
 }
@@ -397,8 +426,215 @@ module.exports = {
   scrapeHebAd,
   scrapeTargetAd,
   scrapeAldiAd,
+  scrapeRandallsAd,
+  scrapeSafewayAd,
+  scrapeCostcoAd,
+  scrapeSamsAd,
   fetchFlippDeals,
   getFallbackDeals,
   getAdCacheStatus,
   clearAdCache,
 };
+
+// ─── RANDALLS — Safeway-owned Texas chain ─────────────────────────────────────
+async function scrapeRandallsAd() {
+  const cacheKey = 'randalls:weekly-ad';
+  if (isCacheValid(cacheKey)) return adCache.get(cacheKey).data;
+  try {
+    // Randalls uses Safeway's platform — same scraper logic
+    const resp = await axios.get('https://www.randalls.com/weeklyad', {
+      headers: getHeaders('https://www.randalls.com'), timeout: 15000,
+    });
+    const $ = cheerio.load(resp.data);
+    const deals = [];
+    // Try JSON-LD structured data
+    $('script[type="application/ld+json"]').each((i, el) => {
+      try {
+        const data = JSON.parse($(el).html() || '{}');
+        const items = data.itemListElement || (Array.isArray(data) ? data : []);
+        items.forEach(item => {
+          const p = item.item || item;
+          if (p.name && p.offers?.price) {
+            deals.push({ name:p.name, store:'randalls', dealPrice:p.offers.price, source:'randalls-jsonld', scrapedAt:new Date().toISOString() });
+          }
+        });
+      } catch(_) {}
+    });
+    // HTML fallback
+    if (deals.length === 0) {
+      $('[class*="product"], [class*="deal"], [class*="item"]').each((i, el) => {
+        const name  = $(el).find('[class*="name"], [class*="title"], h3').first().text().trim();
+        const price = $(el).find('[class*="price"], [class*="sale"]').first().text().trim();
+        if (name && name.length > 2) {
+          deals.push({ name, store:'randalls', dealPrice:parseFloat(price.replace(/[^0-9.]/g,''))||null, source:'randalls-html', scrapedAt:new Date().toISOString() });
+        }
+      });
+    }
+    const result = deals.length > 0 ? deals : getFallbackDeals('randalls');
+    adCache.set(cacheKey, { data: result, timestamp: Date.now() });
+    logger.info(`Randalls ad: ${result.length} deals`);
+    return result;
+  } catch(err) {
+    logger.warn('Randalls ad scrape failed:', err.message);
+    return getFallbackDeals('randalls');
+  }
+}
+
+// ─── SAFEWAY — nationwide grocery chain ──────────────────────────────────────
+async function scrapeSafewayAd() {
+  const cacheKey = 'safeway:weekly-ad';
+  if (isCacheValid(cacheKey)) return adCache.get(cacheKey).data;
+  try {
+    const resp = await axios.get('https://www.safeway.com/weeklyad', {
+      headers: getHeaders('https://www.safeway.com'), timeout: 15000,
+    });
+    const $ = cheerio.load(resp.data);
+    const deals = [];
+    // Safeway uses JSON-LD and __NEXT_DATA__
+    const nextData = $('script#__NEXT_DATA__').html();
+    if (nextData) {
+      try {
+        const parsed = JSON.parse(nextData);
+        const items  = parsed?.props?.pageProps?.weeklyAdItems ||
+                       parsed?.props?.pageProps?.initialData?.items || [];
+        items.forEach((item) => {
+          if (item.name || item.title) {
+            deals.push({
+              name: item.name || item.title,
+              store: 'safeway',
+              dealPrice: item.salePrice || item.price || item.offerPrice,
+              originalPrice: item.regularPrice || item.originalPrice,
+              dealType: item.dealType || 'weekly_special',
+              source: 'safeway-next',
+              scrapedAt: new Date().toISOString(),
+            });
+          }
+        });
+      } catch(_) {}
+    }
+    $('script[type="application/ld+json"]').each((i, el) => {
+      try {
+        const data = JSON.parse($(el).html() || '{}');
+        if (data.offers || data.itemListElement) {
+          (data.itemListElement || []).forEach(item => {
+            if (item.item?.name) {
+              deals.push({ name:item.item.name, store:'safeway', dealPrice:item.item.offers?.price, source:'safeway-jsonld', scrapedAt:new Date().toISOString() });
+            }
+          });
+        }
+      } catch(_) {}
+    });
+    const result = deals.length > 0 ? deals : getFallbackDeals('safeway');
+    adCache.set(cacheKey, { data: result, timestamp: Date.now() });
+    logger.info(`Safeway ad: ${result.length} deals`);
+    return result;
+  } catch(err) {
+    logger.warn('Safeway ad scrape failed:', err.message);
+    return getFallbackDeals('safeway');
+  }
+}
+
+// ─── COSTCO — warehouse weekly deals & coupons ───────────────────────────────
+async function scrapeCostcoAd() {
+  const cacheKey = 'costco:weekly-ad';
+  if (isCacheValid(cacheKey)) return adCache.get(cacheKey).data;
+  try {
+    // Costco has a monthly coupon book and hot buys page
+    const [hotResp, couponResp] = await Promise.allSettled([
+      axios.get('https://www.costco.com/hot-buys.html', { headers: getHeaders('https://www.costco.com'), timeout: 15000 }),
+      axios.get('https://www.costco.com/current-coupons.html', { headers: getHeaders('https://www.costco.com'), timeout: 15000 }),
+    ]);
+    const deals = [];
+    for (const r of [hotResp, couponResp]) {
+      if (r.status !== 'fulfilled') continue;
+      const $ = cheerio.load(r.value.data);
+      // Costco product tiles
+      $('[automation-id="product-price"], .product-tile, [class*="ProductTile"], [class*="product-item"]').each((i, el) => {
+        const name  = $(el).find('[automation-id="product-title"], .product-description, h2, h3').first().text().trim();
+        const price = $(el).find('[automation-id="product-price"], .price, [class*="price"]').first().text().trim();
+        const savings = $(el).find('[class*="savings"], [class*="discount"]').first().text().trim();
+        if (name && name.length > 3) {
+          deals.push({
+            name, store:'costco',
+            dealPrice: parseFloat(price.replace(/[^0-9.]/g,'')) || null,
+            savingsText: savings,
+            dealType: 'hot_buy',
+            source: 'costco-html',
+            scrapedAt: new Date().toISOString(),
+          });
+        }
+      });
+      // Also grab JSON-LD
+      $('script[type="application/ld+json"]').each((i, el) => {
+        try {
+          const data = JSON.parse($(el).html() || '{}');
+          (data.itemListElement || []).forEach(item => {
+            if (item.item?.name && item.item.offers) {
+              deals.push({ name:item.item.name, store:'costco', dealPrice:item.item.offers.price, source:'costco-jsonld', scrapedAt:new Date().toISOString() });
+            }
+          });
+        } catch(_) {}
+      });
+    }
+    const result = deals.length > 0 ? deals : getFallbackDeals('costco');
+    adCache.set(cacheKey, { data: result, timestamp: Date.now() });
+    logger.info(`Costco ad: ${result.length} deals`);
+    return result;
+  } catch(err) {
+    logger.warn('Costco ad scrape failed:', err.message);
+    return getFallbackDeals('costco');
+  }
+}
+
+// ─── SAM'S CLUB — warehouse weekly member savings ────────────────────────────
+async function scrapeSamsAd() {
+  const cacheKey = 'samsclub:weekly-ad';
+  if (isCacheValid(cacheKey)) return adCache.get(cacheKey).data;
+  try {
+    const resp = await axios.get('https://www.samsclub.com/savings', {
+      headers: getHeaders('https://www.samsclub.com'), timeout: 15000,
+    });
+    const $ = cheerio.load(resp.data);
+    const deals = [];
+    // Sam's Club uses __NEXT_DATA__ or window.__PRELOADED_STATE__
+    const nextData = $('script#__NEXT_DATA__').html();
+    if (nextData) {
+      try {
+        const parsed = JSON.parse(nextData);
+        const findProducts = (obj) => {
+          if (!obj || typeof obj !== 'object') return;
+          if (obj.name && (obj.salePrice || obj.finalPrice)) {
+            deals.push({
+              name: obj.name || obj.title,
+              store: 'samsclub',
+              dealPrice: obj.salePrice || obj.finalPrice,
+              originalPrice: obj.listPrice || obj.originalPrice,
+              dealType: 'member_savings',
+              source: 'sams-next',
+              scrapedAt: new Date().toISOString(),
+            });
+          }
+          Object.values(obj).forEach(v => { if (typeof v === 'object') findProducts(v); });
+        };
+        findProducts(parsed);
+      } catch(_) {}
+    }
+    // HTML fallback
+    if (deals.length === 0) {
+      $('[class*="ProductCard"], [class*="product-card"], [data-testid*="product"]').each((i, el) => {
+        const name  = $(el).find('[class*="product-title"], [class*="ProductTitle"], h3').first().text().trim();
+        const price = $(el).find('[class*="price"], [class*="Price"]').first().text().trim();
+        if (name && name.length > 3) {
+          deals.push({ name, store:'samsclub', dealPrice:parseFloat(price.replace(/[^0-9.]/g,''))||null, dealType:'member_savings', source:'sams-html', scrapedAt:new Date().toISOString() });
+        }
+      });
+    }
+    const result = deals.length > 0 ? deals : getFallbackDeals('samsclub');
+    adCache.set(cacheKey, { data: result, timestamp: Date.now() });
+    logger.info(`Sam's Club ad: ${result.length} deals`);
+    return result;
+  } catch(err) {
+    logger.warn("Sam's Club ad scrape failed:", err.message);
+    return getFallbackDeals('samsclub');
+  }
+}

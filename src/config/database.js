@@ -148,7 +148,11 @@ INSERT INTO stores (slug, name, api_type, website_url) VALUES
   ('target',     'Target',      'scraper',      'https://www.target.com'),
   ('aldi',       'Aldi',        'scraper',      'https://www.aldi.us'),
   ('wholefoods', 'Whole Foods', 'scraper',      'https://www.wholefoodsmarket.com'),
-  ('sprouts',    'Sprouts',     'scraper',      'https://www.sprouts.com')
+  ('sprouts',    'Sprouts',     'scraper',      'https://www.sprouts.com'),
+  ('randalls',   'Randalls',    'scraper',      'https://www.randalls.com'),
+  ('safeway',    'Safeway',     'scraper',      'https://www.safeway.com'),
+  ('costco',     'Costco',      'scraper',      'https://www.costco.com'),
+  ('samsclub',   "Sam's Club",  'scraper',      'https://www.samsclub.com')
 ON CONFLICT (slug) DO NOTHING;
 `;
 
