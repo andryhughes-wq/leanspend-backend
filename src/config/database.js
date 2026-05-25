@@ -2,16 +2,27 @@
 const { Pool } = require('pg');
 const logger   = require('../utils/logger');
 
-const pool = new Pool({
-  host:     process.env.DB_HOST     || 'localhost',
-  port:     parseInt(process.env.DB_PORT) || 5432,
-  database: process.env.DB_NAME     || 'leanspend',
-  user:     process.env.DB_USER     || 'leanspend_user',
-  password: process.env.DB_PASSWORD,
-  max: 20,
-  idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 2000,
-});
+// Support DATABASE_URL (Railway) or individual vars (local)
+const pool = process.env.DATABASE_URL
+  ? new Pool({
+      connectionString: process.env.DATABASE_URL,
+      ssl: process.env.DATABASE_URL.includes('railway') ? { rejectUnauthorized: false } : false,
+      max: 20,
+      idleTimeoutMillis: 30000,
+      connectionTimeoutMillis: 5000,
+    })
+  : new Pool({
+      host:     process.env.DB_HOST     || 'localhost',
+      port:     parseInt(process.env.DB_PORT) || 5432,
+      database: process.env.DB_NAME     || 'leanspend',
+      user:     process.env.DB_USER     || 'leanspend_user',
+      password: process.env.DB_PASSWORD,
+      max: 20,
+      idleTimeoutMillis: 30000,
+      connectionTimeoutMillis: 5000,
+    });
+
+pool.on('error', err => logger.error('PostgreSQL pool error:', err.message));
 
 pool.on('error', err => logger.error('PostgreSQL pool error:', err.message));
 
