@@ -74,7 +74,7 @@ async function start() {
       logger.warn('⚠️  Redis unavailable — app will run without caching');
     }
 
-    await db.runMigrations();
+    try { await db.runMigrations(); } catch(e) { console.warn("Migration warning:", e.message); }
 
     // Initial Kroger sync on startup
     const krogerService = require('./services/krogerService');

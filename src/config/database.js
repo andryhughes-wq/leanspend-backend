@@ -27,6 +27,7 @@ pool.on('error', err => logger.error('PostgreSQL pool error:', err.message));
 pool.on('error', err => logger.error('PostgreSQL pool error:', err.message));
 
 const MIGRATIONS = `
+CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 CREATE TABLE IF NOT EXISTS users (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   telegram_id BIGINT UNIQUE,
