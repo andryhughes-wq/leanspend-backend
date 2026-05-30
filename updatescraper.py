@@ -1,4 +1,4 @@
-'use strict';
+﻿content = r"""'use strict';
 const axios = require('axios');
 const cheerio = require('cheerio');
 const krogerService = require('./krogerService');
@@ -301,3 +301,8 @@ async function scrapeAllWeeklyAds(storeNames = ['kroger','walmart','heb','target
 }
 
 module.exports = { scrapeAllWeeklyAds, clearAdCache };
+"""
+
+with open(r'C:\Users\andry\OneDrive\Desktop\LeanSpend\leanspend\src\services\weeklyAdScraper.js', 'w', encoding='utf-8') as f:
+    f.write(content)
+print('Done - weeklyAdScraper.js rewritten')

@@ -105,7 +105,22 @@ async function start() {
       } catch(err) { logger.error('Deal cleanup error:', err.message); }
     });
 
-    app.listen(PORT, () => {
+    
+// Daily deal refresh - runs at 6am every day
+const adScraper = require('./services/weeklyAdScraper');
+cron.schedule('0 6 * * *', async () => {
+  logger.info('Daily deal refresh starting...');
+  try {
+    adScraper.clearAdCache();
+    const ALL_STORES = ['kroger','walmart','heb','target','aldi','costco','samsclub','safeway','randalls'];
+    await adScraper.scrapeAllWeeklyAds(ALL_STORES);
+    logger.info('Daily deal refresh complete');
+  } catch (err) {
+    logger.error('Daily deal refresh failed:', err.message);
+  }
+}, { timezone: 'America/Chicago' });
+
+app.listen(PORT, () => {
       logger.info(`\n🥗💪 LeanSpend API is running!`);
       logger.info(`   URL:    http://localhost:${PORT}`);
       logger.info(`   Health: http://localhost:${PORT}/health`);
