@@ -1,4 +1,4 @@
-'use strict';
+﻿content = r"""'use strict';
 const krogerService = require('./krogerService');
 const logger = require('../utils/logger');
 
@@ -136,3 +136,8 @@ function clearAdCache() {
 }
 
 module.exports = { scrapeAllWeeklyAds, clearAdCache };
+"""
+
+with open(r'C:\Users\andry\OneDrive\Desktop\LeanSpend\leanspend\src\services\weeklyAdScraper.js', 'w', encoding='utf-8') as f:
+    f.write(content)
+print('Rewrote weeklyAdScraper.js')
