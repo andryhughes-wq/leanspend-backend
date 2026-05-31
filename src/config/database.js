@@ -153,7 +153,7 @@ INSERT INTO stores (slug, name, api_type, website_url) VALUES
   ('randalls',   'Randalls',    'scraper',      'https://www.randalls.com'),
   ('safeway',    'Safeway',     'scraper',      'https://www.safeway.com'),
   ('costco',     'Costco',      'scraper',      'https://www.costco.com'),
-  ('samsclub',   "Sams Club",  'scraper',      'https://www.samsclub.com')
+  ('samsclub',   'Sams Club',  'scraper',      'https://www.samsclub.com')
 ON CONFLICT (slug) DO NOTHING;
 `;
 
