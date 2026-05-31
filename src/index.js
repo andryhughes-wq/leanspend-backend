@@ -1,4 +1,4 @@
-'use strict';
+﻿'use strict';
 require('dotenv').config();
 
 const express     = require('express');
@@ -10,6 +10,7 @@ const rateLimit   = require('express-rate-limit');
 
 const logger    = require('./utils/logger');
 const db        = require('./config/database');
+const cookieParser = require('cookie-parser');
 const redis     = require('./config/redis');
 const { errorHandler } = require('./middleware/errorHandler');
 
@@ -17,6 +18,7 @@ const {
   budgetRouter, mealsRouter, dealsRouter, nutritionRouter,
   chatRouter, themeRouter, storesRouter, telegramRouter,
 } = require('./routes/index');
+const { authRouter } = require('./routes/auth');
 
 const cron = require('node-cron');
 
@@ -29,12 +31,13 @@ app.use(cors({ origin: '*', credentials: true }));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 app.use(morgan('dev'));
+app.use(cookieParser());
 
 const limiter = rateLimit({
   windowMs: parseInt(process.env.API_RATE_LIMIT_WINDOW_MS) || 15*60*1000,
   max:      parseInt(process.env.API_RATE_LIMIT_MAX) || 100,
   standardHeaders: true, legacyHeaders: false,
-  message: { error: 'Too many requests — slow down!' },
+  message: { error: 'Too many requests â€” slow down!' },
 });
 app.use('/api', limiter);
 
@@ -50,6 +53,7 @@ app.get('/health', async (req, res) => {
   });
 });
 
+app.use('/api/auth',        authRouter);
 app.use('/api/budget',      budgetRouter);
 app.use('/api/meals',       mealsRouter);
 app.use('/api/deals',       dealsRouter);
@@ -65,13 +69,13 @@ app.use(errorHandler);
 async function start() {
   try {
     await db.connect();
-    logger.info('✅ PostgreSQL connected');
+    logger.info('âœ… PostgreSQL connected');
 
     try {
       await redis.connect();
-      logger.info('✅ Redis connected');
+      logger.info('âœ… Redis connected');
     } catch(redisErr) {
-      logger.warn('⚠️  Redis unavailable — app will run without caching');
+      logger.warn('âš ï¸  Redis unavailable â€” app will run without caching');
     }
 
     try { try { await db.runMigrations(); } catch(migErr) { console.warn("Migration warning:", migErr.message); } } catch(e) { console.warn("Migration warning:", e.message); }
@@ -80,21 +84,21 @@ async function start() {
     const krogerService = require('./services/krogerService');
     setTimeout(async () => {
       try {
-        logger.info('🛒 Syncing live Kroger deals on startup...');
+        logger.info('ðŸ›’ Syncing live Kroger deals on startup...');
         await krogerService.syncDealsToDb(db);
       } catch(err) { logger.warn('Startup Kroger sync failed (non-fatal):', err.message); }
     }, 5000);
 
-    // Kroger deal sync — every Wednesday at 6am (when Kroger resets weekly ads)
+    // Kroger deal sync â€” every Wednesday at 6am (when Kroger resets weekly ads)
     cron.schedule('0 6 * * 3', async () => {
-      logger.info('🛒 Wednesday Kroger weekly ad refresh starting...');
+      logger.info('ðŸ›’ Wednesday Kroger weekly ad refresh starting...');
       try { await krogerService.syncDealsToDb(db); }
       catch(err) { logger.error('Kroger cron sync failed:', err.message); }
     });
 
     // Also refresh every 6 hours
     cron.schedule('0 */6 * * *', async () => {
-      logger.info('🔄 6-hour Kroger deal refresh...');
+      logger.info('ðŸ”„ 6-hour Kroger deal refresh...');
       try { await krogerService.syncDealsToDb(db); }
       catch(err) { logger.warn('6-hour sync failed:', err.message); }
     });
@@ -121,7 +125,7 @@ cron.schedule('0 6 * * *', async () => {
 }, { timezone: 'America/Chicago' });
 
 app.listen(PORT, () => {
-      logger.info(`\n🥗💪 LeanSpend API is running!`);
+      logger.info(`\nðŸ¥—ðŸ’ª LeanSpend API is running!`);
       logger.info(`   URL:    http://localhost:${PORT}`);
       logger.info(`   Health: http://localhost:${PORT}/health`);
       logger.info(`   Tagline: ${process.env.APP_TAGLINE || 'Eat lean. Spend less. Live fit.'}\n`);

@@ -1,4 +1,4 @@
-'use strict';
+﻿'use strict';
 const { Pool } = require('pg');
 const logger   = require('../utils/logger');
 
@@ -43,6 +43,9 @@ CREATE TABLE IF NOT EXISTS users (
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+ALTER TABLE users ADD COLUMN IF NOT EXISTS email VARCHAR(255) UNIQUE;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash TEXT;
 
 CREATE TABLE IF NOT EXISTS stores (
   id SERIAL PRIMARY KEY,
@@ -159,7 +162,7 @@ ON CONFLICT (slug) DO NOTHING;
 
 async function connect()       { await pool.query('SELECT 1'); }
 async function disconnect()    { await pool.end(); }
-async function runMigrations() { await pool.query(MIGRATIONS); logger.info('✅ LeanSpend database schema ready'); }
+async function runMigrations() { await pool.query(MIGRATIONS); logger.info('âœ… LeanSpend database schema ready'); }
 async function healthCheck()   { try { await pool.query('SELECT 1'); return true; } catch { return false; } }
 
 async function query(text, params) {
