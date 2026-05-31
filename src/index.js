@@ -127,7 +127,7 @@ app.listen(PORT, () => {
       logger.info(`   Tagline: ${process.env.APP_TAGLINE || 'Eat lean. Spend less. Live fit.'}\n`);
     });
   } catch (err) {
-    logger.error('❌ Failed to start LeanSpend:', err.message);
+    logger.error('Failed to start LeanSpend:', err.message, err.stack);
     logger.error('   Check that PostgreSQL and Redis are running');
     logger.error('   Then check your .env file has DB_PASSWORD filled in');
     process.exit(1);
