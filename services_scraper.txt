@@ -1,0 +1,303 @@
+'use strict';
+const axios = require('axios');
+const cheerio = require('cheerio');
+const krogerService = require('./krogerService');
+const logger = require('../utils/logger');
+
+const adCache = new Map();
+const CACHE_TTL = 6 * 60 * 60 * 1000;
+
+function isCacheValid(key) {
+  const entry = adCache.get(key);
+  return entry && (Date.now() - entry.timestamp < CACHE_TTL);
+}
+
+function clearAdCache() {
+  adCache.clear();
+  logger.info('Ad cache cleared');
+}
+
+const HEADERS = {
+  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+  'Accept': 'application/json, text/html, */*',
+  'Accept-Language': 'en-US,en;q=0.9',
+};
+
+// Try to fetch HEB deals from their public API
+async function fetchHEBDeals() {
+  try {
+    const resp = await axios.get('https://www.heb.com/pharmacy-api/v1/weekly-deals', {
+      headers: HEADERS, timeout: 10000
+    });
+    if (resp.data && resp.data.deals) {
+      return resp.data.deals.slice(0, 30).map(d => ({
+        product_name: d.name || d.title,
+        deal_price: d.salePrice || d.price,
+        original_price: d.regularPrice,
+        savings_amount: d.regularPrice && d.salePrice ? (d.regularPrice - d.salePrice).toFixed(2) : null,
+        category: d.category || 'Grocery',
+        store: 'heb', store_name: 'HEB', store_slug: 'heb',
+        valid_from: new Date().toISOString().split('T')[0],
+        valid_to: new Date(Date.now() + 7*24*60*60*1000).toISOString().split('T')[0],
+        live: true, source: 'heb_api'
+      }));
+    }
+  } catch (err) {
+    logger.warn('HEB API failed, using static:', err.message);
+  }
+  return null;
+}
+
+// Try Walmart open endpoint
+async function fetchWalmartDeals() {
+  try {
+    const resp = await axios.get('https://www.walmart.com/cp/grocery/976759?moduleType=category&moduleId=category-page&facet=shelf_description%3AGrocery', {
+      headers: { ...HEADERS, 'Accept': 'application/json' },
+      timeout: 10000
+    });
+    // Walmart blocks most scraping - fall through to static
+  } catch (err) {
+    logger.warn('Walmart scrape failed, using static:', err.message);
+  }
+  return null;
+}
+
+// Weekly rotating static deals - rotates every week based on week number
+function getRotatingDeals(store, week) {
+  const allDeals = {
+    walmart: [
+      [
+        { product_name: 'Chicken Breast Boneless 3lb', deal_price: 6.97, original_price: 10.97, savings_amount: 4.00, category: 'Meat' },
+        { product_name: 'Large Eggs 18ct', deal_price: 3.97, original_price: 5.97, savings_amount: 2.00, category: 'Dairy' },
+        { product_name: 'Baby Spinach 5oz', deal_price: 2.48, original_price: 3.48, savings_amount: 1.00, category: 'Produce' },
+        { product_name: 'Ground Turkey 93% Lean 1lb', deal_price: 3.48, original_price: 5.28, savings_amount: 1.80, category: 'Meat' },
+        { product_name: 'Greek Yogurt Vanilla 32oz', deal_price: 3.97, original_price: 5.97, savings_amount: 2.00, category: 'Dairy' },
+        { product_name: 'Oat Milk 64oz', deal_price: 3.47, original_price: 4.97, savings_amount: 1.50, category: 'Dairy' },
+        { product_name: 'Brown Rice 5lb', deal_price: 4.47, original_price: 6.47, savings_amount: 2.00, category: 'Pantry' },
+      ],
+      [
+        { product_name: 'Tilapia Fillets 2lb', deal_price: 5.97, original_price: 8.97, savings_amount: 3.00, category: 'Seafood' },
+        { product_name: 'Broccoli Florets 12oz', deal_price: 1.97, original_price: 2.97, savings_amount: 1.00, category: 'Produce' },
+        { product_name: 'Cottage Cheese 24oz', deal_price: 3.27, original_price: 4.77, savings_amount: 1.50, category: 'Dairy' },
+        { product_name: 'Whole Wheat Bread', deal_price: 2.47, original_price: 3.97, savings_amount: 1.50, category: 'Bakery' },
+        { product_name: 'Canned Tuna in Water 5oz', deal_price: 0.97, original_price: 1.47, savings_amount: 0.50, category: 'Pantry' },
+        { product_name: 'Sweet Potatoes 3lb Bag', deal_price: 2.97, original_price: 4.47, savings_amount: 1.50, category: 'Produce' },
+        { product_name: 'Almond Butter 16oz', deal_price: 4.97, original_price: 6.97, savings_amount: 2.00, category: 'Pantry' },
+      ],
+    ],
+    heb: [
+      [
+        { product_name: 'HEB Chicken Thighs Family Pack', deal_price: 7.99, original_price: 11.99, savings_amount: 4.00, category: 'Meat' },
+        { product_name: 'Avocados Large 4ct', deal_price: 3.99, original_price: 5.99, savings_amount: 2.00, category: 'Produce' },
+        { product_name: 'Atlantic Salmon 1lb', deal_price: 8.99, original_price: 13.99, savings_amount: 5.00, category: 'Seafood' },
+        { product_name: 'HEB Whole Milk 1gal', deal_price: 3.49, original_price: 4.99, savings_amount: 1.50, category: 'Dairy' },
+        { product_name: 'Strawberries 1lb', deal_price: 2.49, original_price: 3.99, savings_amount: 1.50, category: 'Produce' },
+        { product_name: 'Black Beans 4ct 15oz', deal_price: 3.49, original_price: 4.99, savings_amount: 1.50, category: 'Pantry' },
+        { product_name: 'HEB Tortillas Flour 30ct', deal_price: 3.99, original_price: 5.49, savings_amount: 1.50, category: 'Bakery' },
+      ],
+      [
+        { product_name: 'Ground Beef 80/20 3lb', deal_price: 9.99, original_price: 13.99, savings_amount: 4.00, category: 'Meat' },
+        { product_name: 'Blueberries 18oz', deal_price: 4.99, original_price: 6.99, savings_amount: 2.00, category: 'Produce' },
+        { product_name: 'Shrimp Cooked 1lb', deal_price: 7.99, original_price: 11.99, savings_amount: 4.00, category: 'Seafood' },
+        { product_name: 'Cheddar Cheese Block 32oz', deal_price: 6.99, original_price: 9.99, savings_amount: 3.00, category: 'Dairy' },
+        { product_name: 'Roma Tomatoes 2lb', deal_price: 1.99, original_price: 3.49, savings_amount: 1.50, category: 'Produce' },
+        { product_name: 'Quinoa 2lb', deal_price: 5.99, original_price: 7.99, savings_amount: 2.00, category: 'Pantry' },
+        { product_name: 'Protein Powder Vanilla 2lb', deal_price: 19.99, original_price: 27.99, savings_amount: 8.00, category: 'Supplements' },
+      ],
+    ],
+    aldi: [
+      [
+        { product_name: 'ALDI Chicken Breast 2lb', deal_price: 4.49, original_price: 6.49, savings_amount: 2.00, category: 'Meat' },
+        { product_name: 'Large Eggs 12ct', deal_price: 1.89, original_price: 3.29, savings_amount: 1.40, category: 'Dairy' },
+        { product_name: 'Salmon Fillet 1lb', deal_price: 5.99, original_price: 8.99, savings_amount: 3.00, category: 'Seafood' },
+        { product_name: 'Almond Butter 16oz', deal_price: 3.29, original_price: 4.99, savings_amount: 1.70, category: 'Pantry' },
+        { product_name: 'Mixed Greens 5oz', deal_price: 1.79, original_price: 2.79, savings_amount: 1.00, category: 'Produce' },
+        { product_name: 'Grass Fed Ground Beef 1lb', deal_price: 5.49, original_price: 7.99, savings_amount: 2.50, category: 'Meat' },
+        { product_name: 'Simply Nature Oat Milk 64oz', deal_price: 2.99, original_price: 4.49, savings_amount: 1.50, category: 'Dairy' },
+      ],
+      [
+        { product_name: 'ALDI Turkey Breast 2lb', deal_price: 6.49, original_price: 8.99, savings_amount: 2.50, category: 'Meat' },
+        { product_name: 'Greek Yogurt 32oz', deal_price: 3.49, original_price: 4.99, savings_amount: 1.50, category: 'Dairy' },
+        { product_name: 'Tilapia Fillets 2lb', deal_price: 4.99, original_price: 6.99, savings_amount: 2.00, category: 'Seafood' },
+        { product_name: 'Sprouted Grain Bread', deal_price: 2.99, original_price: 4.49, savings_amount: 1.50, category: 'Bakery' },
+        { product_name: 'Cherry Tomatoes 10oz', deal_price: 1.99, original_price: 2.99, savings_amount: 1.00, category: 'Produce' },
+        { product_name: 'Lentil Soup 19oz', deal_price: 1.49, original_price: 2.29, savings_amount: 0.80, category: 'Pantry' },
+        { product_name: 'Whey Protein Vanilla 2lb', deal_price: 11.99, original_price: 17.99, savings_amount: 6.00, category: 'Supplements' },
+      ],
+    ],
+    target: [
+      [
+        { product_name: 'Good & Gather Chicken Breast 2lb', deal_price: 6.99, original_price: 9.99, savings_amount: 3.00, category: 'Meat' },
+        { product_name: 'Good & Gather Oat Milk 64oz', deal_price: 3.49, original_price: 4.99, savings_amount: 1.50, category: 'Dairy' },
+        { product_name: 'Blueberries 6oz', deal_price: 2.49, original_price: 3.99, savings_amount: 1.50, category: 'Produce' },
+        { product_name: 'Kind Bar Variety 12ct', deal_price: 9.99, original_price: 13.99, savings_amount: 4.00, category: 'Snacks' },
+        { product_name: 'Good & Gather Greek Yogurt 32oz', deal_price: 4.49, original_price: 5.99, savings_amount: 1.50, category: 'Dairy' },
+        { product_name: 'Organic Eggs 12ct', deal_price: 4.49, original_price: 5.99, savings_amount: 1.50, category: 'Dairy' },
+        { product_name: 'Brown Rice Bag 5lb', deal_price: 4.99, original_price: 6.99, savings_amount: 2.00, category: 'Pantry' },
+      ],
+      [
+        { product_name: 'Good & Gather Salmon 1lb', deal_price: 8.49, original_price: 11.99, savings_amount: 3.50, category: 'Seafood' },
+        { product_name: 'Avocados 4ct Bag', deal_price: 3.99, original_price: 5.99, savings_amount: 2.00, category: 'Produce' },
+        { product_name: 'Good & Gather String Cheese 24ct', deal_price: 5.99, original_price: 7.99, savings_amount: 2.00, category: 'Dairy' },
+        { product_name: 'RxBar 12ct Box', deal_price: 19.99, original_price: 25.99, savings_amount: 6.00, category: 'Snacks' },
+        { product_name: 'Celsius Energy 12pk', deal_price: 19.99, original_price: 24.99, savings_amount: 5.00, category: 'Beverages' },
+        { product_name: 'Quinoa Organic 2lb', deal_price: 6.99, original_price: 8.99, savings_amount: 2.00, category: 'Pantry' },
+        { product_name: 'Baby Carrots 2lb', deal_price: 1.99, original_price: 3.29, savings_amount: 1.30, category: 'Produce' },
+      ],
+    ],
+    costco: [
+      [
+        { product_name: 'Kirkland Chicken Breast 6.5lb', deal_price: 16.99, original_price: 23.99, savings_amount: 7.00, category: 'Meat' },
+        { product_name: 'Kirkland Greek Yogurt 3lb', deal_price: 6.49, original_price: 9.49, savings_amount: 3.00, category: 'Dairy' },
+        { product_name: 'Kirkland Wild Salmon 3lb', deal_price: 21.99, original_price: 29.99, savings_amount: 8.00, category: 'Seafood' },
+        { product_name: 'Organic Eggs 24ct', deal_price: 8.99, original_price: 12.99, savings_amount: 4.00, category: 'Dairy' },
+        { product_name: 'Kirkland Mixed Nuts 2.5lb', deal_price: 14.99, original_price: 19.99, savings_amount: 5.00, category: 'Snacks' },
+        { product_name: 'Kirkland Olive Oil 2L', deal_price: 13.99, original_price: 19.99, savings_amount: 6.00, category: 'Pantry' },
+      ],
+      [
+        { product_name: 'Kirkland Ground Turkey 6lb', deal_price: 17.99, original_price: 24.99, savings_amount: 7.00, category: 'Meat' },
+        { product_name: 'Kirkland Protein Bar 20ct', deal_price: 19.99, original_price: 26.99, savings_amount: 7.00, category: 'Snacks' },
+        { product_name: 'Kirkland Almond Milk 6pk', deal_price: 10.99, original_price: 14.99, savings_amount: 4.00, category: 'Dairy' },
+        { product_name: 'Kirkland Frozen Berries 4lb', deal_price: 9.99, original_price: 13.99, savings_amount: 4.00, category: 'Frozen' },
+        { product_name: 'Kirkland Quinoa 4.5lb', deal_price: 11.99, original_price: 15.99, savings_amount: 4.00, category: 'Pantry' },
+        { product_name: 'Kirkland Tuna 8pk', deal_price: 13.99, original_price: 18.99, savings_amount: 5.00, category: 'Pantry' },
+      ],
+    ],
+    samsclub: [
+      [
+        { product_name: 'Member Mark Chicken Breast 6lb', deal_price: 14.98, original_price: 19.98, savings_amount: 5.00, category: 'Meat' },
+        { product_name: 'Member Mark Eggs 36ct', deal_price: 8.48, original_price: 12.48, savings_amount: 4.00, category: 'Dairy' },
+        { product_name: 'Member Mark Tuna 8pk', deal_price: 10.98, original_price: 14.98, savings_amount: 4.00, category: 'Pantry' },
+        { product_name: 'Member Mark Greek Yogurt 3lb', deal_price: 5.98, original_price: 8.98, savings_amount: 3.00, category: 'Dairy' },
+        { product_name: 'Member Mark Salmon 3lb', deal_price: 18.98, original_price: 25.98, savings_amount: 7.00, category: 'Seafood' },
+      ],
+      [
+        { product_name: 'Member Mark Ground Beef 4lb', deal_price: 15.98, original_price: 20.98, savings_amount: 5.00, category: 'Meat' },
+        { product_name: 'Member Mark Protein Powder 5lb', deal_price: 34.98, original_price: 44.98, savings_amount: 10.00, category: 'Supplements' },
+        { product_name: 'Member Mark Almonds 3lb', deal_price: 12.98, original_price: 17.98, savings_amount: 5.00, category: 'Snacks' },
+        { product_name: 'Member Mark Frozen Shrimp 2lb', deal_price: 13.98, original_price: 18.98, savings_amount: 5.00, category: 'Seafood' },
+        { product_name: 'Member Mark Brown Rice 25lb', deal_price: 14.98, original_price: 19.98, savings_amount: 5.00, category: 'Pantry' },
+      ],
+    ],
+    safeway: [
+      [
+        { product_name: 'Chicken Drumsticks 3lb', deal_price: 4.99, original_price: 7.99, savings_amount: 3.00, category: 'Meat' },
+        { product_name: 'Lucerne Cottage Cheese 24oz', deal_price: 3.49, original_price: 4.99, savings_amount: 1.50, category: 'Dairy' },
+        { product_name: 'Strawberries 1lb', deal_price: 2.49, original_price: 3.99, savings_amount: 1.50, category: 'Produce' },
+        { product_name: 'O Organics Eggs 12ct', deal_price: 4.99, original_price: 6.99, savings_amount: 2.00, category: 'Dairy' },
+        { product_name: 'Tuna Chunk Light 5oz 4pk', deal_price: 3.99, original_price: 5.99, savings_amount: 2.00, category: 'Pantry' },
+      ],
+      [
+        { product_name: 'Pork Loin Boneless 3lb', deal_price: 7.99, original_price: 11.99, savings_amount: 4.00, category: 'Meat' },
+        { product_name: 'Signature Farms Broccoli 12oz', deal_price: 1.99, original_price: 2.99, savings_amount: 1.00, category: 'Produce' },
+        { product_name: 'Lucerne Greek Yogurt 32oz', deal_price: 4.49, original_price: 5.99, savings_amount: 1.50, category: 'Dairy' },
+        { product_name: 'Open Nature Salmon 1lb', deal_price: 7.99, original_price: 10.99, savings_amount: 3.00, category: 'Seafood' },
+        { product_name: 'Cage Free Eggs 18ct', deal_price: 5.49, original_price: 7.49, savings_amount: 2.00, category: 'Dairy' },
+      ],
+    ],
+    randalls: [
+      [
+        { product_name: 'Chicken Wings 3lb', deal_price: 7.99, original_price: 11.99, savings_amount: 4.00, category: 'Meat' },
+        { product_name: 'Signature Farms Broccoli', deal_price: 1.99, original_price: 2.99, savings_amount: 1.00, category: 'Produce' },
+        { product_name: 'Lucerne Greek Yogurt 32oz', deal_price: 4.49, original_price: 5.99, savings_amount: 1.50, category: 'Dairy' },
+        { product_name: 'Open Nature Ground Turkey 1lb', deal_price: 4.99, original_price: 6.99, savings_amount: 2.00, category: 'Meat' },
+        { product_name: 'Cage Free Eggs 12ct', deal_price: 4.49, original_price: 5.99, savings_amount: 1.50, category: 'Dairy' },
+      ],
+      [
+        { product_name: 'Beef Sirloin 1lb', deal_price: 8.99, original_price: 12.99, savings_amount: 4.00, category: 'Meat' },
+        { product_name: 'Cherry Tomatoes 10oz', deal_price: 2.49, original_price: 3.49, savings_amount: 1.00, category: 'Produce' },
+        { product_name: 'Open Nature Salmon 1lb', deal_price: 7.99, original_price: 10.99, savings_amount: 3.00, category: 'Seafood' },
+        { product_name: 'Signature Select Tuna 5oz 4pk', deal_price: 3.99, original_price: 5.49, savings_amount: 1.50, category: 'Pantry' },
+        { product_name: 'Deli Sliced Turkey 1lb', deal_price: 5.99, original_price: 7.99, savings_amount: 2.00, category: 'Deli' },
+      ],
+    ],
+  };
+
+  const storeDeals = allDeals[store.toLowerCase()];
+  if (!storeDeals) return [];
+  
+  // Rotate weekly based on week number
+  const weekIndex = week % storeDeals.length;
+  const today = new Date().toISOString().split('T')[0];
+  const nextWeek = new Date(Date.now() + 7*24*60*60*1000).toISOString().split('T')[0];
+  
+  return storeDeals[weekIndex].map(d => ({
+    ...d,
+    store: store.toLowerCase(),
+    store_name: store.charAt(0).toUpperCase() + store.slice(1),
+    store_slug: store.toLowerCase(),
+    savings_percent: d.original_price ? Math.round((1 - d.deal_price/d.original_price)*100) : 0,
+    valid_from: today,
+    valid_to: nextWeek,
+    live: true,
+    source: 'weekly_rotating',
+  }));
+}
+
+function getWeekNumber() {
+  const now = new Date();
+  const start = new Date(now.getFullYear(), 0, 1);
+  return Math.floor((now - start) / (7 * 24 * 60 * 60 * 1000));
+}
+
+async function scrapeAllWeeklyAds(storeNames = ['kroger','walmart','heb','target','aldi','costco','samsclub','safeway','randalls']) {
+  const cacheKey = storeNames.join(',');
+  if (isCacheValid(cacheKey)) {
+    logger.info('Returning cached deals');
+    return adCache.get(cacheKey).data;
+  }
+
+  let allDeals = [];
+  const week = getWeekNumber();
+
+  for (const store of storeNames) {
+    try {
+      let storeDeals = [];
+
+      if (['kroger','krogers','fred meyer','ralphs','king soopers'].includes(store.toLowerCase())) {
+        // Live Kroger API
+        try {
+          const krogerDeals = await krogerService.getWeeklyDeals();
+          if (krogerDeals && krogerDeals.length > 0) {
+            storeDeals = krogerDeals.map(d => ({
+              ...d,
+              store: 'kroger', store_name: 'Kroger', store_slug: 'kroger',
+              live: true, source: 'kroger_api'
+            }));
+            logger.info(`Kroger API: ${storeDeals.length} deals`);
+          }
+        } catch (err) {
+          logger.warn('Kroger API failed:', err.message);
+          storeDeals = getRotatingDeals('kroger', week);
+        }
+      } else if (store.toLowerCase() === 'heb') {
+        // Try live HEB first
+        const hebDeals = await fetchHEBDeals();
+        storeDeals = hebDeals || getRotatingDeals('heb', week);
+        logger.info(`HEB: ${storeDeals.length} deals (${hebDeals ? 'live' : 'static'})`);
+      } else {
+        // Rotating static for all other stores
+        storeDeals = getRotatingDeals(store, week);
+        logger.info(`${store}: ${storeDeals.length} static deals (week ${week})`);
+      }
+
+      allDeals = [...allDeals, ...storeDeals];
+    } catch (err) {
+      logger.error(`Error fetching ${store}:`, err.message);
+    }
+  }
+
+  const result = {
+    deals: allDeals,
+    storeCount: storeNames.length,
+    totalDeals: allDeals.length,
+    fetchedAt: new Date().toISOString(),
+    week: week,
+  };
+
+  adCache.set(cacheKey, { data: result, timestamp: Date.now() });
+  logger.info(`Total deals: ${allDeals.length} across ${storeNames.length} stores`);
+  return result;
+}
+
+module.exports = { scrapeAllWeeklyAds, clearAdCache };

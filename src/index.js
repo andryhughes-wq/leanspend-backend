@@ -1,14 +1,3 @@
-// === TEMP CRASH DIAGNOSTICS (remove after debugging) ===
-process.on('uncaughtException', (e) => {
-  console.error('UNCAUGHT EXCEPTION ==>', (e && e.stack) || e);
-  setTimeout(() => process.exit(1), 750);
-});
-process.on('unhandledRejection', (r) => {
-  console.error('UNHANDLED REJECTION ==>', (r && r.stack) || r);
-  setTimeout(() => process.exit(1), 750);
-});
-// === END CRASH DIAGNOSTICS ===
-
 'use strict';
 require('dotenv').config();
 
@@ -139,13 +128,9 @@ app.listen(PORT, () => {
     });
   } catch (err) {
     logger.error('Failed to start LeanSpend:', err.message, err.stack);
-    console.error('=== FULL ERROR DUMP (type) ===', typeof err);
-    console.error('=== FULL ERROR DUMP (value) ===', err);
-    console.error('=== FULL ERROR DUMP (stack) ===', err && err.stack);
-    try { console.error('=== FULL ERROR DUMP (json) ===', JSON.stringify(err, Object.getOwnPropertyNames(Object(err)))); } catch (_e) {}
     logger.error('   Check that PostgreSQL and Redis are running');
     logger.error('   Then check your .env file has DB_PASSWORD filled in');
-    setTimeout(() => process.exit(1), 750) /* DELAYED EXIT for flush */;
+    process.exit(1);
   }
 }
 
