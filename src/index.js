@@ -1,4 +1,4 @@
-﻿'use strict';
+'use strict';
 require('dotenv').config();
 
 const express     = require('express');
@@ -118,6 +118,27 @@ async function start() {
         await db.query(`UPDATE deals SET valid_to=CURRENT_DATE-1 WHERE valid_to<CURRENT_DATE AND valid_to>=CURRENT_DATE-INTERVAL '7 days'`);
       } catch(err) { logger.error('Deal cleanup error:', err.message); }
     });
+    // Daily price snapshot - 11pm Central, after the day's deal refreshes
+    cron.schedule('0 23 * * *', async () => {
+      logger.info('Daily price snapshot starting...');
+      try {
+        const r = await db.query(`
+          INSERT INTO deal_price_history (product_id, store_id, price, was_on_deal, deal_type, recorded_date)
+          SELECT p.id, p.store_id, COALESCE(d.deal_price, p.unit_price), (d.id IS NOT NULL), d.deal_type, CURRENT_DATE
+          FROM products p
+          LEFT JOIN LATERAL (
+            SELECT id, deal_price, deal_type FROM deals
+            WHERE deals.product_id = p.id AND deals.store_id = p.store_id
+              AND CURRENT_DATE BETWEEN deals.valid_from AND deals.valid_to
+            ORDER BY deals.deal_price ASC LIMIT 1
+          ) d ON true
+          WHERE p.unit_price IS NOT NULL OR d.deal_price IS NOT NULL
+          ON CONFLICT (product_id, store_id, recorded_date) DO UPDATE
+            SET price = EXCLUDED.price, was_on_deal = EXCLUDED.was_on_deal, deal_type = EXCLUDED.deal_type
+        `);
+        logger.info('Daily price snapshot complete: ' + r.rowCount + ' rows');
+      } catch (err) { logger.error('Daily price snapshot failed:', err.message); }
+    }, { timezone: 'America/Chicago' });
 
     
 // Daily deal refresh - runs at 6am every day

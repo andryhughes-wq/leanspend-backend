@@ -1,4 +1,4 @@
-﻿'use strict';
+'use strict';
 const { Pool } = require('pg');
 const logger   = require('../utils/logger');
 
@@ -126,6 +126,9 @@ CREATE TABLE IF NOT EXISTS deal_price_history (
   recorded_date DATE NOT NULL,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_dph_unique_daily
+  ON deal_price_history (product_id, store_id, recorded_date);
 
 CREATE TABLE IF NOT EXISTS meal_plans (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
