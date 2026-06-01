@@ -27,7 +27,15 @@ const PORT = process.env.PORT || 3001;
 
 app.use(helmet());
 app.use(compression());
-app.use(cors({ origin: '*', credentials: true }));
+app.use(cors({
+  origin: function (origin, callback) {
+    const allowed = ['https://leanandry.vercel.app', 'http://localhost:3000'];
+    if (!origin || allowed.includes(origin)) return callback(null, true);
+    try { if (/\.vercel\.app$/.test(new URL(origin).hostname)) return callback(null, true); } catch (e) {}
+    return callback(null, false);
+  },
+  credentials: true,
+}));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 app.use(morgan('dev'));
