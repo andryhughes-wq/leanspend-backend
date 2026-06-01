@@ -19,6 +19,7 @@ const {
   chatRouter, themeRouter, storesRouter, telegramRouter,
 } = require('./routes/index');
 const { authRouter } = require('./routes/auth');
+const { geoRouter } = require('./routes/geo');
 
 const cron = require('node-cron');
 
@@ -62,6 +63,7 @@ app.get('/health', async (req, res) => {
 });
 
 app.use('/api/auth',        authRouter);
+app.use('/api/deals',       geoRouter);
 app.use('/api/budget',      budgetRouter);
 app.use('/api/meals',       mealsRouter);
 app.use('/api/deals',       dealsRouter);
