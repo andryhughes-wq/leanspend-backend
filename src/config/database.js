@@ -47,6 +47,28 @@ CREATE TABLE IF NOT EXISTS users (
 ALTER TABLE users ADD COLUMN IF NOT EXISTS email VARCHAR(255) UNIQUE;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash TEXT;
 
+ALTER TABLE deals ADD COLUMN IF NOT EXISTS latitude  DECIMAL(9,6);
+ALTER TABLE deals ADD COLUMN IF NOT EXISTS longitude DECIMAL(9,6);
+
+CREATE TABLE IF NOT EXISTS deal_submissions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES users(id),
+  product_name VARCHAR(500) NOT NULL,
+  brand VARCHAR(255),
+  store_name VARCHAR(255),
+  price DECIMAL(10,2) NOT NULL,
+  barcode VARCHAR(30),
+  latitude  DECIMAL(9,6),
+  longitude DECIMAL(9,6),
+  zip VARCHAR(20),
+  confirmations INT DEFAULT 1,
+  status VARCHAR(20) DEFAULT 'pending',
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_deal_submissions_geo ON deal_submissions(latitude, longitude);
+CREATE INDEX IF NOT EXISTS idx_deal_submissions_user ON deal_submissions(user_id);
+
 CREATE TABLE IF NOT EXISTS stores (
   id SERIAL PRIMARY KEY,
   slug VARCHAR(50) UNIQUE NOT NULL,
