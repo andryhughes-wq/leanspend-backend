@@ -36,20 +36,18 @@ geoRouter.get('/nearby', async (req, res, next) => {
     }
     // Haversine distance in miles; 3959 = Earth radius in miles
     const result = await db.query(
-      `SELECT id, product_name, brand, store_name, price, latitude, longitude, zip,
-              confirmations, status, created_at,
-              (3959 * acos(
-                 cos(radians($1)) * cos(radians(latitude)) *
-                 cos(radians(longitude) - radians($2)) +
-                 sin(radians($1)) * sin(radians(latitude))
-              )) AS distance_miles
-       FROM deal_submissions
-       WHERE latitude IS NOT NULL AND longitude IS NOT NULL
-       HAVING (3959 * acos(
-                 cos(radians($1)) * cos(radians(latitude)) *
-                 cos(radians(longitude) - radians($2)) +
-                 sin(radians($1)) * sin(radians(latitude))
-              )) <= $3
+      `SELECT * FROM (
+         SELECT id, product_name, brand, store_name, price, latitude, longitude, zip,
+                confirmations, status, created_at,
+                (3959 * acos(
+                   cos(radians($1)) * cos(radians(latitude)) *
+                   cos(radians(longitude) - radians($2)) +
+                   sin(radians($1)) * sin(radians(latitude))
+                )) AS distance_miles
+         FROM deal_submissions
+         WHERE latitude IS NOT NULL AND longitude IS NOT NULL
+       ) sub
+       WHERE distance_miles <= $3
        ORDER BY distance_miles ASC
        LIMIT 100`,
       [lat, lng, radius]
