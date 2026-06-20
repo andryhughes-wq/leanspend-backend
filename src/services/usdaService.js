@@ -55,9 +55,11 @@ function normalizeFood(food) {
   };
 }
 
-async function searchFood(query, dataType='Branded', pageSize=10) {
-  return redis.getOrSet(`usda:search:${query}:${dataType}`, async () => {
-    const resp = await client().get('/foods/search', { params: { query, dataType, pageSize } });
+async function searchFood(query, dataType, pageSize=25) {
+  return redis.getOrSet(`usda:search:${query}:${dataType||'all'}`, async () => {
+    const params = { query, pageSize };
+    if (dataType) params.dataType = dataType;
+    const resp = await client().get('/foods/search', { params });
     return (resp.data.foods || []).map(f => ({
       fdcId: f.fdcId, description: f.description, brandOwner: f.brandOwner,
       gtinUpc: f.gtinUpc, servingSize: f.servingSize,

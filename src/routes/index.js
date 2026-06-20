@@ -189,7 +189,7 @@ dealsRouter.get('/calendar', async (req, res, next) => {
 
 // ─── NUTRITION ────────────────────────────────────────────────────────────────
 const nutritionRouter = express.Router();
-nutritionRouter.get('/search',     async (req,res,next) => { try { const {q,dataType='Branded',limit=10}=req.query; if(!q) return res.status(400).json({error:'q required'}); res.json({ results: await usdaService.searchFood(q,dataType,parseInt(limit)), query:q }); } catch(err){next(err);} });
+nutritionRouter.get('/search',     async (req,res,next) => { try { const {q,dataType,limit=25}=req.query; if(!q) return res.status(400).json({error:'q required'}); res.json({ results: await usdaService.searchFood(q,dataType,parseInt(limit)), query:q }); } catch(err){next(err);} });
 nutritionRouter.get('/facts/:id',  async (req,res,next) => { try { const c=redis.keys.productNutrition(req.params.id); const cached=await redis.get(c); if(cached) return res.json(cached); const facts=await usdaService.getFoodById(req.params.id); await redis.set(c,facts,60*60*24*7); res.json(facts); } catch(err){next(err);} });
 nutritionRouter.get('/upc/:upc',   async (req,res,next) => { try { const r=await usdaService.searchByUpc(req.params.upc); if(!r) return res.status(404).json({error:'Not found'}); res.json(r); } catch(err){next(err);} });
 nutritionRouter.get('/benefits',   async (req,res,next) => { try { const {ingredient}=req.query; if(!ingredient) return res.status(400).json({error:'ingredient required'}); res.json({ ingredient, benefits: await usdaService.getIngredientBenefits(ingredient) }); } catch(err){next(err);} });
