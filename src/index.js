@@ -42,6 +42,30 @@ app.use(express.urlencoded({ extended: true }));
 app.use(morgan('dev'));
 app.use(cookieParser());
 
+// Map tile proxy: fetch CARTO dark tiles server-side so the browser only ever
+// talks to our own origin (no CORS, no ad-blocker/DNS filter can break the map).
+// Registered BEFORE the rate limiter so a map view's many tiles aren't throttled.
+const TILE_SUBS = ['a', 'b', 'c', 'd'];
+app.get('/api/tiles/:z/:x/:y', async (req, res) => {
+  const { z, x, y } = req.params;
+  if (!/^\d{1,2}$/.test(z) || !/^\d{1,7}$/.test(x) || !/^\d{1,7}$/.test(y)) {
+    return res.status(400).end();
+  }
+  try {
+    const sub = TILE_SUBS[(parseInt(x, 10) + parseInt(y, 10)) % TILE_SUBS.length];
+    const url = `https://${sub}.basemaps.cartocdn.com/dark_all/${z}/${x}/${y}.png`;
+    const r = await fetch(url, { headers: { 'User-Agent': 'LeanSpend/1.0 (+https://leanandry.vercel.app)' } });
+    if (!r.ok) return res.status(502).end();
+    const buf = Buffer.from(await r.arrayBuffer());
+    res.set('Content-Type', 'image/png');
+    res.set('Cache-Control', 'public, max-age=604800, immutable');
+    return res.send(buf);
+  } catch (err) {
+    logger.error('Tile proxy error:', err.message);
+    return res.status(502).end();
+  }
+});
+
 const limiter = rateLimit({
   windowMs: parseInt(process.env.API_RATE_LIMIT_WINDOW_MS) || 15*60*1000,
   max:      parseInt(process.env.API_RATE_LIMIT_MAX) || 100,
